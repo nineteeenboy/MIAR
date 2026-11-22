@@ -1,0 +1,190 @@
+name: miar-social-practices
+services:
+  users-db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: users
+      POSTGRES_USER: social
+      POSTGRES_PASSWORD: social
+    ports: ["127.0.0.1:55432:5432"]
+    volumes: ["users-data:/var/lib/postgresql/data"]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U social -d users"]
+      interval: 3s
+      timeout: 3s
+      retries: 30
+  content-db:
+    image: mongo:7
+    ports: ["127.0.0.1:57017:27017"]
+    volumes: ["content-data:/data/db"]
+    healthcheck:
+      test: ["CMD", "mongosh", "--quiet", "--eval", "db.adminCommand('ping')"]
+      interval: 3s
+      timeout: 3s
+      retries: 30
+  rabbitmq:
+    image: rabbitmq:3.13-management
+    environment:
+      RABBITMQ_DEFAULT_USER: social
+      RABBITMQ_DEFAULT_PASS: social
+    ports: ["127.0.0.1:5672:5672", "127.0.0.1:15672:15672"]
+    volumes: ["rabbit-data:/var/lib/rabbitmq"]
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+  users-service:
+    build:
+      context: .
+      dockerfile: users_service/Dockerfile
+    environment:
+      USERS_DB_URL: postgresql+psycopg://social:social@users-db:5432/users
+    depends_on:
+      users-db: {condition: service_healthy}
+    ports: ["127.0.0.1:8001:8000"]
+  content-service:
+    build:
+      context: .
+      dockerfile: content_service/Dockerfile
+    environment:
+      CONTENT_DB_URL: mongodb://content-db:27017/
+      USERS_URL: http://users-service:8000
+    depends_on:
+      content-db: {condition: service_healthy}
+      users-service: {condition: service_started}
+    ports: ["127.0.0.1:8002:8000"]
+  interaction-db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: interactions
+      POSTGRES_USER: social
+      POSTGRES_PASSWORD: social
+    ports: ["127.0.0.1:55433:5432"]
+    volumes: ["interaction-data:/var/lib/postgresql/data"]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U social -d interactions"]
+      interval: 3s
+      timeout: 3s
+      retries: 30
+
+  community-db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: communities
+      POSTGRES_USER: social
+      POSTGRES_PASSWORD: social
+    ports: ["127.0.0.1:55434:5432"]
+    volumes: ["community-data:/var/lib/postgresql/data"]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U social -d communities"]
+      interval: 3s
+      timeout: 3s
+      retries: 30
+
+  moderation-db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: moderation
+      POSTGRES_USER: social
+      POSTGRES_PASSWORD: social
+    ports: ["127.0.0.1:55435:5432"]
+    volumes: ["moderation-data:/var/lib/postgresql/data"]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U social -d moderation"]
+      interval: 3s
+      timeout: 3s
+      retries: 30
+  messenger-db:
+    image: mongo:7
+    ports: ["127.0.0.1:57018:27017"]
+    volumes: ["messenger-data:/data/db"]
+    healthcheck:
+      test: ["CMD", "mongosh", "--quiet", "--eval", "db.adminCommand('ping')"]
+      interval: 3s
+      timeout: 3s
+      retries: 30
+  interaction-service:
+    build:
+      context: .
+      dockerfile: interaction_service/Dockerfile
+    environment:
+      INTERACTION_DB_URL: postgresql+psycopg://social:social@interaction-db:5432/interactions
+      USERS_URL: http://users-service:8000
+      CONTENT_URL: http://content-service:8000
+    depends_on:
+      interaction-db: {condition: service_healthy}
+      users-service: {condition: service_started}
+      content-service: {condition: service_started}
+    ports: ["127.0.0.1:8003:8000"]
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/openapi.json', timeout=2)"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+  community-service:
+    build:
+      context: .
+      dockerfile: community_service/Dockerfile
+    environment:
+      COMMUNITY_DB_URL: postgresql+psycopg://social:social@community-db:5432/communities
+      USERS_URL: http://users-service:8000
+      CONTENT_URL: http://content-service:8000
+    depends_on:
+      community-db: {condition: service_healthy}
+      users-service: {condition: service_started}
+    ports: ["127.0.0.1:8004:8000"]
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/openapi.json', timeout=2)"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+  messenger-service:
+    build:
+      context: .
+      dockerfile: messenger_service/Dockerfile
+    environment:
+      MESSENGER_DB_URL: mongodb://messenger-db:27017/
+      USERS_URL: http://users-service:8000
+      CONTENT_URL: http://content-service:8000
+    depends_on:
+      messenger-db: {condition: service_healthy}
+      users-service: {condition: service_started}
+    ports: ["127.0.0.1:8005:8000"]
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/openapi.json', timeout=2)"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+  moderation-service:
+    build:
+      context: .
+      dockerfile: moderation_service/Dockerfile
+    environment:
+      MODERATION_DB_URL: postgresql+psycopg://social:social@moderation-db:5432/moderation
+      USERS_URL: http://users-service:8000
+      CONTENT_URL: http://content-service:8000
+      INTERACTION_URL: http://interaction-service:8000
+      AMQP_URL: amqp://social:social@rabbitmq:5672/%2F
+      MODERATOR_KEY: social-demo-moderator
+    depends_on:
+      moderation-db: {condition: service_healthy}
+      users-service: {condition: service_started}
+      content-service: {condition: service_started}
+      rabbitmq: {condition: service_healthy}
+      interaction-service: {condition: service_healthy}
+    ports: ["127.0.0.1:8006:8000"]
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/openapi.json', timeout=2)"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+
+volumes:
+  users-data:
+  content-data:
+  rabbit-data:
+  interaction-data:
+  community-data:
+  messenger-data:
+  moderation-data:
