@@ -88,3 +88,7 @@ def mark_read(dialog_id: UUID, data: ReadInput, user_id: UUID = Depends(actor)):
         {'$max': {key: message['sequence']}}, return_document=ReturnDocument.AFTER)
     current = db.messages.find_one({'dialog_id': str(dialog_id), 'sequence': result['read'][str(user_id)]})
     return {'last_read_message_id': current['_id']}
+
+
+from common.observability import setup
+setup(app, "messenger")

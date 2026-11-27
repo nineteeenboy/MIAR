@@ -73,3 +73,7 @@ def leave(community_id: UUID, user_id: UUID = Depends(actor)):
         db.execute(text('DELETE FROM memberships WHERE community_id=:c AND user_id=:u'),
                    {'c': community_id, 'u': user_id})
     return Response(status_code=204)
+
+
+from common.observability import setup
+setup(app, "community")

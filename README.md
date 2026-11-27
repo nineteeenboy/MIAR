@@ -1,152 +1,99 @@
-# Социальная сеть — практики 5–8
+# Социальная сеть — практики 9 и 10
 
-Реализованы **шесть** самостоятельных микросервисов, по четыре бизнес-операции в каждом.
-Каждый сервис собирается собственным Dockerfile и использует только свою БД.
-
-| Сервис | Порт API | Хранилище | Порт БД на хосте |
-|---|---:|---|---:|
-| UsersService | 8001 | PostgreSQL users | 55432 |
-| ContentService | 8002 | MongoDB social_content | 57017 |
-| InteractionService | 8003 | PostgreSQL interactions | 55433 |
-| CommunityService | 8004 | PostgreSQL communities | 55434 |
-| MessengerService | 8005 | MongoDB social_messenger | 57018 |
-| ModerationService | 8006 | PostgreSQL moderation | 55435 |
+Шесть микросервисов из предыдущих работ дополнены Keycloak, проверкой JWT и ролей,
+мониторингом Prometheus и централизованными логами Loki. Grafana показывает метрики
+API и шести БД. Docker Compose содержит 24 контейнера.
 
 ## Запуск
 
-Нужны Docker Desktop с Linux containers, Docker Compose и Python 3.12.
-Откройте эту папку в VS Code. Из корня проекта выполните:
+Нужны Docker Desktop с Linux containers и Python 3.12. Порты прежнего стенда
+8001–8006, 55432–55435, 57017–57018, 5672 и 15672 должны быть свободны.
 
 ```powershell
 docker compose up -d --build
+docker compose ps
 python -m venv .venv
 .\.venv\Scripts\python.exe -m pip install -r requirements.txt
 .\.venv\Scripts\python.exe run_unit_tests.py
+.\.venv\Scripts\python.exe verify_practices.py --outages
 ```
 
-Дождитесь готовности контейнеров (`docker compose ps`). Порты опубликованы только
-на `127.0.0.1`. Панель RabbitMQ: http://127.0.0.1:15672, логин/пароль `social` / `social`.
-Остановка без удаления данных: `docker compose down`. Именованные volumes сохраняются.
-В составе проекта 13 контейнеров: 6 API, 6 БД и RabbitMQ.
+Первый запуск требует загрузки образов, сборки API, импорта realm и миграций Grafana.
+Дождитесь healthy у Keycloak и шести API. Скрипт проверки также ожидает готовность
+Grafana. Без `--outages` он не останавливает контейнеры. С этим флагом на время
+проверки останавливаются Keycloak и CommunityService; блоки finally запускают их
+обратно. Протоколы создаются в `test-results` и исключены из Git.
 
-## Практика 5
+| Интерфейс | Адрес |
+|---|---|
+| Keycloak | http://localhost:8080 |
+| OIDC discovery | http://localhost:8080/realms/social-network/.well-known/openid-configuration |
+| Grafana | http://localhost:3000/d/miar-social/miar-social-network |
+| Prometheus | http://localhost:9090 |
+| Loki API | http://localhost:3100 |
+| API шести сервисов | http://localhost:8001 … http://localhost:8006 |
+| Метрики каждого API | `/metrics` |
 
-Для очередей запустите сначала получатель, затем отправитель в другом терминале:
+## Keycloak и роли
 
-```powershell
-python practice5/queue_receiver.py exclusive
-python practice5/queue_sender.py exclusive
+Realm: `social-network`. Confidential client: `social-api`.
+Секрет учебного клиента: `social-api-local-demo-secret`.
+Пользователи `student` и `other` имеют роль `user`; `moderator` — `user` и
+`moderator`; `viewer` имеет только `viewer`. Пароль всех четырех учебных
+пользователей: `Demo-pass-2026!`.
+
+Администратор Keycloak: `admin` / `Admin-demo-2026!`.
+Администратор Grafana: `admin` / `Grafana-demo-2026!`.
+Для просмотра учебного дашборда включен анонимный Viewer на localhost.
+Это локальная учебная конфигурация с HTTP и демонстрационными учетными данными.
+
+JWT передается как `Authorization: Bearer <access_token>`. Бэкенд вызывает
+Keycloak introspection с аутентификацией клиента; проверяет active, issuer,
+audience, срок действия, тип access token и роль. Для командного демонстрационного
+скрипта включен Direct Access Grant с scope `openid`. Standard Flow также включен
+в конфигурации, но отдельный браузерный клиент не реализован.
+
+Создание, изменение и удаление требуют `user`. Операции MessengerService и
+жалобы требуют `user`; список всех жалоб и принятие решения — `moderator`.
+Открыты чтение профилей/публикаций/сообществ/комментариев, `/health` и `/metrics`.
+JWT subject заменяет входящий `X-User-ID`; `X-Moderator-Key` больше не дает прав.
+Автор публикации обязан совпадать с subject. Изменять профиль или удалять пост
+может его владелец либо модератор. Профиль создается с UUID subject из Keycloak.
+
+## Observability
+
+Выбраны две технологии: мониторинг и логирование. Трассировка не реализуется.
+Prometheus опрашивает шесть API и шесть DB-exporters раз в 5 секунд. Доступны
+`social_http_requests_total`, histogram задержек `social_http_request_duration_seconds`,
+`pg_up`, `pg_stat_database_numbackends`, `mongodb_up` и метрики MongoDB serverStatus.
+`up` показывает доступность цели опроса, `pg_up`/`mongodb_up` — соединение с БД.
+Правило `SocialTargetDown`: `up == 0` в течение 15 секунд.
+
+Alloy обнаруживает только контейнеры этого Compose с `miar.logs=true`, собирает
+stdout/stderr API, БД и Keycloak и отправляет их в Loki. JSON-логи API содержат
+service, method, route, status, duration_ms и request_id. Авторизационные заголовки,
+JWT, пароли и тела сообщений в access log не записываются. `X-Request-ID`
+передается при вложенных HTTP-вызовах; пример запроса LogQL:
+
+```logql
+{kind="api"} |= "miar-demo-"
 ```
 
-Аналогично используйте аргументы `durable` и `auto`. Для завершения получателя нажмите Ctrl+C.
-Эксклюзивная очередь удалится с закрытием соединения, auto — после отключения последнего потребителя.
+Дашборд, источники и правила настраиваются из `observability` автоматически.
+Loki хранит данные в именованном volume; Docker-логи ротируются по 10 МБ × 3.
+Доступ Alloy к Docker socket предназначен для доверенного локального стенда.
 
+## Проверки
 
-```powershell
-python practice5/rabbit_demo.py queues
-python practice5/rabbit_demo.py publish --mode fanout --workload "###"
-python practice5/rabbit_demo.py worker --mode fanout --queue social.fanout.feed --once
-python practice5/rabbit_demo.py worker --mode fanout --queue social.fanout.audit --once
-python practice5/rabbit_demo.py publish --mode direct --key moderation --workload "**"
-python practice5/rabbit_demo.py worker --mode direct --queue social.direct.moderation --once
-python practice5/rabbit_demo.py publish --mode topic --key content.post.created --workload "--"
-python practice5/rabbit_demo.py worker --mode topic --queue social.topic.posts --once
-python practice5/rabbit_demo.py worker --mode topic --queue social.topic.all_content --once
-```
+`python run_unit_tests.py` — изолированный набор; контейнеры не нужны.
+`python verify_practices.py --outages` — реальные HTTP, Keycloak, PostgreSQL,
+MongoDB, RabbitMQ, Prometheus, Loki и Grafana. Проверяются 401/403/201, подмена
+автора, истечение настоящего JWT, отказ Identity Provider, обнаружение остановки
+API, метрики БД, логи всех сервисов и корреляция Content → Users.
 
-Для распределения нагрузки запустите несколько workers одной очереди в разных терминалах.
-Без `--once` потребитель работает непрерывно. Один символ нагрузки означает одну секунду.
-Автопроверка ускоряет сон до 0.01 секунды на символ, сохраняя проверку маршрутизации.
-Повторный запуск verify_broker очищает только демонстрационные очереди этого проекта.
+Старые файлы `tests/test_*.py` относятся к контракту практик 7–8 с внутренними
+заголовками. Они сохранены для сравнения; `pytest.ini` выбирает актуальный unit-набор,
+а проверка нового внешнего контракта выполняется через `verify_practices.py`.
+Первоначальный проект практик 5–8 находится в отдельной предыдущей версии.
 
-Проверка перезапуска (не запускайте consumers между двумя фазами):
-
-```powershell
-python practice5/check_restart.py prepare
-docker compose restart rabbitmq
-# Дождитесь healthy у rabbitmq в docker compose ps
-python practice5/check_restart.py verify
-```
-
-Фаза prepare очищает собственные демонстрационные очереди. Verify подтверждает сохранение
-persistent-сообщений fanout/topic и исчезновение non-durable direct-очереди.
-
-## Практики 7–8 — реализация и тесты
-
-В каждой папке `*_service` находятся `app.py` и собственный `Dockerfile`.
-Модуль `common/api.py` содержит только HTTP-проверки зависимостей, без общей БД.
-
-Это внутренний учебный срез. Внешняя аутентификация AuthService/Gateway остается
-проектом из практики 6. Заголовок `X-User-ID` моделирует идентификатор, проверенный
-доверенным шлюзом; это не реализация проверки пользовательского токена.
-Доступ к списку жалоб и решениям ограничен заголовком `X-Moderator-Key`;
-демонстрационное значение в Compose — `social-demo-moderator`.
-
-### Взаимодействия и инварианты
-
-- Content проверяет автора в Users перед записью поста.
-- Interaction проверяет пользователя в Users и публикацию в Content;
-  повторный лайк не создает дубликат.
-- Community проверяет пользователя в Users; сообщество и роль owner создаются
-  одной транзакцией, повторное вступление идемпотентно, выход owner дает 409.
-- Messenger проверяет участников в Users; читать/отправлять сообщения могут
-  только участники диалога. `$inc` задает порядок сообщений, `$max` не позволяет
-  сдвинуть курсор прочтения назад.
-- Moderation проверяет заявителя в Users и объект жалобы в Users/Content/Interaction.
-  Решение и outbox записываются одной транзакцией. Событие отправляется в durable-очередь
-  `social.moderation.decisions` с delivery_mode=2 и publisher confirm.
-  Повтор того же решения не создает новое событие; другое решение дает 409.
-  Сервис сохраняет решение и публикует событие; автоматическое применение блокировки
-  в сервисе-владельце данных в этом учебном срезе не реализовано.
-
-Если RabbitMQ недоступен, решение остается записанным, а событие — pending.
-Повторная отправка:
-
-```powershell
-docker compose exec moderation-service python -m moderation_service.publish_outbox --once
-```
-
-Без `--once` команда проверяет outbox каждые 5 секунд. Доставка at least once:
-потребителю нужно устранять повторы по `event_id`.
-
-### Unit-тесты
-
-Docker, БД и RabbitMQ для этого набора не нужны. После установки зависимостей:
-
-```powershell
-python run_unit_tests.py
-```
-
-112 проверок вызывают функции исходных сервисов напрямую. `unittest.mock`
-заменяет PostgreSQL, MongoDB, HTTP и AMQP. Попытка открыть реальное сетевое
-соединение завершает unit-тест ошибкой. Конструкторы хранилищ подменяются до
-импорта; для каждого теста создаются новые mock-объекты. Протокол JUnit
-сохраняется в `test-results/unit-tests.xml` и не включается в Git.
-
-| Модуль | Проверок |
-|---|---:|
-| UsersService | 16 |
-| ContentService | 15 |
-| InteractionService | 13 |
-| CommunityService | 14 |
-| MessengerService | 17 |
-| ModerationService | 26 |
-| common/api.py | 11 |
-| Всего | 112 |
-
-Набор проверяет бизнес-правила, валидацию, права доступа, параметры обращения
-к хранилищу, обработку отказов и формирование событий. Реальные ограничения БД,
-атомарность операций MongoDB, сетевые контракты и доставка сообщений проверяются
-интеграционными тестами отдельно.
-
-### Интеграционные тесты
-
-При работающем Docker Compose запускайте только файлы этого уровня:
-
-```powershell
-python -m pytest tests --ignore=tests/unit -v --junitxml=test-results/integration.xml
-```
-
-Набор включает 73 проверки HTTP-интерфейсов, собственных БД сервисов,
-межсервисной цепочки и обработки отказов. Тестовые UUID уникальны; фикстуры
-удаляют только записи своего запуска. Скрипты RabbitMQ находятся в `practice5`.
+Остановка с сохранением данных: `docker compose down`.

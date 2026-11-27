@@ -11,7 +11,11 @@ from pydantic import ValidationError
 @pytest.mark.parametrize("key,allowed", [(None, False), ("wrong", False), ("test-key", True)])
 def test_moderator_access(modules, monkeypatch, key, allowed):
     service = modules["moderation"]
-    monkeypatch.setattr(service, "MODERATOR_KEY", "test-key")
+    from common.security import identity, Identity
+    person = Identity("00000000-0000-4000-8000-000000000001",
+                      frozenset({"moderator"}) if key == "test-key" else frozenset({"user"}))
+    from common import security
+    monkeypatch.setattr(security, "identity", Mock(get=lambda: person))
     if allowed:
         assert service.moderator(key) is None
     else:
@@ -88,7 +92,7 @@ def test_report_owner_access(modules, sql_db, ids, monkeypatch, caller, expected
 
 def test_moderator_reads_missing_report(modules, sql_db, ids, monkeypatch):
     service = modules["moderation"]
-    monkeypatch.setattr(service, "MODERATOR_KEY", "test-key")
+    monkeypatch.setattr(service, "is_moderator", lambda key: True)
     sql_db(service).execute.return_value.mappings.return_value.first.return_value = None
     with pytest.raises(HTTPException) as error:
         service.read(ids[0], None, "test-key")

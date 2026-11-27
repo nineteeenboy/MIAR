@@ -1,0 +1,160 @@
+{
+  "realm": "social-network",
+  "enabled": true,
+  "displayName": "MIAR Social Network",
+  "sslRequired": "none",
+  "accessTokenLifespan": 120,
+  "roles": {
+    "realm": [
+      {
+        "name": "user"
+      },
+      {
+        "name": "moderator"
+      },
+      {
+        "name": "viewer"
+      }
+    ]
+  },
+  "clients": [
+    {
+      "clientId": "social-api",
+      "name": "Social Network API",
+      "enabled": true,
+      "publicClient": false,
+      "secret": "social-api-local-demo-secret",
+      "directAccessGrantsEnabled": true,
+      "standardFlowEnabled": true,
+      "redirectUris": [
+        "http://localhost:8090/callback"
+      ],
+      "webOrigins": [
+        "http://localhost:8090"
+      ],
+      "protocolMappers": [
+        {
+          "name": "social-api-audience",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-audience-mapper",
+          "config": {
+            "included.client.audience": "social-api",
+            "access.token.claim": "true",
+            "id.token.claim": "false",
+            "introspection.token.claim": "true"
+          }
+        }
+      ]
+    },
+    {
+      "clientId": "social-short-lived",
+      "name": "Social Network API",
+      "enabled": true,
+      "publicClient": false,
+      "secret": "short-lived-local-demo-secret",
+      "directAccessGrantsEnabled": true,
+      "standardFlowEnabled": true,
+      "redirectUris": [
+        "http://localhost:8090/callback"
+      ],
+      "webOrigins": [
+        "http://localhost:8090"
+      ],
+      "protocolMappers": [
+        {
+          "name": "social-api-audience",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-audience-mapper",
+          "config": {
+            "included.client.audience": "social-api",
+            "access.token.claim": "true",
+            "id.token.claim": "false",
+            "introspection.token.claim": "true"
+          }
+        }
+      ],
+      "attributes": {
+        "access.token.lifespan": "5"
+      }
+    }
+  ],
+  "users": [
+    {
+      "id": "00000000-0000-4000-8000-000000000001",
+      "username": "student",
+      "enabled": true,
+      "email": "student@miar.local",
+      "emailVerified": true,
+      "firstName": "student",
+      "lastName": "MIAR",
+      "credentials": [
+        {
+          "type": "password",
+          "value": "Demo-pass-2026!",
+          "temporary": false
+        }
+      ],
+      "realmRoles": [
+        "user"
+      ]
+    },
+    {
+      "id": "00000000-0000-4000-8000-000000000002",
+      "username": "moderator",
+      "enabled": true,
+      "email": "moderator@miar.local",
+      "emailVerified": true,
+      "firstName": "moderator",
+      "lastName": "MIAR",
+      "credentials": [
+        {
+          "type": "password",
+          "value": "Demo-pass-2026!",
+          "temporary": false
+        }
+      ],
+      "realmRoles": [
+        "user",
+        "moderator"
+      ]
+    },
+    {
+      "id": "00000000-0000-4000-8000-000000000003",
+      "username": "viewer",
+      "enabled": true,
+      "email": "viewer@miar.local",
+      "emailVerified": true,
+      "firstName": "viewer",
+      "lastName": "MIAR",
+      "credentials": [
+        {
+          "type": "password",
+          "value": "Demo-pass-2026!",
+          "temporary": false
+        }
+      ],
+      "realmRoles": [
+        "viewer"
+      ]
+    },
+    {
+      "id": "00000000-0000-4000-8000-000000000004",
+      "username": "other",
+      "enabled": true,
+      "email": "other@miar.local",
+      "emailVerified": true,
+      "firstName": "other",
+      "lastName": "MIAR",
+      "credentials": [
+        {
+          "type": "password",
+          "value": "Demo-pass-2026!",
+          "temporary": false
+        }
+      ],
+      "realmRoles": [
+        "user"
+      ]
+    }
+  ]
+}

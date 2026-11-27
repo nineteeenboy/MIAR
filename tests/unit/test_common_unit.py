@@ -13,7 +13,7 @@ def test_fetch_success(modules, monkeypatch):
     request = Mock(return_value=response)
     monkeypatch.setattr(api.httpx, "get", request)
     assert api.fetch("http://test.local/user") == {"id": "user-1"}
-    request.assert_called_once_with("http://test.local/user", timeout=3.0, trust_env=False)
+    request.assert_called_once_with("http://test.local/user", timeout=3.0, trust_env=False, headers={"X-Request-ID": ""})
 
 
 @pytest.mark.parametrize("status,expected", [(404, 404), (500, 503), (302, 503)])

@@ -1,5 +1,4 @@
 """ModerationService: PostgreSQL, права модератора и transactional outbox."""
-import hmac
 import json
 import os
 from contextlib import asynccontextmanager
@@ -13,7 +12,6 @@ from common.api import actor, check_post, fetch, USERS_URL
 
 engine = create_engine(os.getenv('MODERATION_DB_URL',
     'postgresql+psycopg://social:social@127.0.0.1:55435/moderation'), pool_pre_ping=True)
-MODERATOR_KEY = os.getenv('MODERATOR_KEY', 'social-demo-moderator')
 AMQP_URL = os.getenv('AMQP_URL', 'amqp://social:social@127.0.0.1:5672/%2F')
 INTERACTION_URL = os.getenv('INTERACTION_URL', 'http://127.0.0.1:8003')
 EVENT_QUEUE = 'social.moderation.decisions'
@@ -57,7 +55,9 @@ class DecisionInput(BaseModel):
         return value.strip()
 
 def is_moderator(key):
-    return key is not None and hmac.compare_digest(key, MODERATOR_KEY)
+    from common.security import identity
+    person=identity.get()
+    return person is not None and 'moderator' in person.roles
 
 def moderator(x_moderator_key: str | None = Header(default=None)):
     if not is_moderator(x_moderator_key):
@@ -146,3 +146,7 @@ def decide(report_id: UUID, data: DecisionInput):
     except pika.exceptions.AMQPError:
         pass
     return dict(result)
+
+
+from common.observability import setup
+setup(app, "moderation")

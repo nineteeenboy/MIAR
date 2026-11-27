@@ -1,4 +1,4 @@
-name: miar-social-practices
+name: miar-practices-9-10
 services:
   users-db:
     image: postgres:16-alpine
@@ -6,43 +6,108 @@ services:
       POSTGRES_DB: users
       POSTGRES_USER: social
       POSTGRES_PASSWORD: social
-    ports: ["127.0.0.1:55432:5432"]
-    volumes: ["users-data:/var/lib/postgresql/data"]
+    ports:
+    - 127.0.0.1:55432:5432
+    volumes:
+    - users-data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U social -d users"]
+      test:
+      - CMD-SHELL
+      - pg_isready -U social -d users
       interval: 3s
       timeout: 3s
       retries: 30
+    labels:
+      miar.logs: 'true'
+      miar.kind: database
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: '3'
   content-db:
     image: mongo:7
-    ports: ["127.0.0.1:57017:27017"]
-    volumes: ["content-data:/data/db"]
+    ports:
+    - 127.0.0.1:57017:27017
+    volumes:
+    - content-data:/data/db
     healthcheck:
-      test: ["CMD", "mongosh", "--quiet", "--eval", "db.adminCommand('ping')"]
+      test:
+      - CMD
+      - mongosh
+      - --quiet
+      - --eval
+      - db.adminCommand('ping')
       interval: 3s
       timeout: 3s
       retries: 30
+    labels:
+      miar.logs: 'true'
+      miar.kind: database
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: '3'
   rabbitmq:
     image: rabbitmq:3.13-management
     environment:
       RABBITMQ_DEFAULT_USER: social
       RABBITMQ_DEFAULT_PASS: social
-    ports: ["127.0.0.1:5672:5672", "127.0.0.1:15672:15672"]
-    volumes: ["rabbit-data:/var/lib/rabbitmq"]
+    ports:
+    - 127.0.0.1:5672:5672
+    - 127.0.0.1:15672:15672
+    volumes:
+    - rabbit-data:/var/lib/rabbitmq
     healthcheck:
-      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      test:
+      - CMD
+      - rabbitmq-diagnostics
+      - -q
+      - ping
       interval: 5s
       timeout: 5s
       retries: 30
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: '3'
   users-service:
     build:
       context: .
       dockerfile: users_service/Dockerfile
     environment:
       USERS_DB_URL: postgresql+psycopg://social:social@users-db:5432/users
+      OIDC_ISSUER: http://localhost:8080/realms/social-network
+      OIDC_INTROSPECTION_URL: http://keycloak:8080/realms/social-network/protocol/openid-connect/token/introspect
+      OIDC_CLIENT_ID: social-api
+      OIDC_CLIENT_SECRET: social-api-local-demo-secret
+      OIDC_AUDIENCE: social-api
     depends_on:
-      users-db: {condition: service_healthy}
-    ports: ["127.0.0.1:8001:8000"]
+      users-db:
+        condition: service_healthy
+      keycloak:
+        condition: service_healthy
+    ports:
+    - 127.0.0.1:8001:8000
+    healthcheck:
+      test:
+      - CMD
+      - python
+      - -c
+      - import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health',timeout=2)
+      interval: 5s
+      timeout: 3s
+      retries: 30
+    labels:
+      miar.logs: 'true'
+      miar.kind: api
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: '3'
   content-service:
     build:
       context: .
@@ -50,60 +115,136 @@ services:
     environment:
       CONTENT_DB_URL: mongodb://content-db:27017/
       USERS_URL: http://users-service:8000
+      OIDC_ISSUER: http://localhost:8080/realms/social-network
+      OIDC_INTROSPECTION_URL: http://keycloak:8080/realms/social-network/protocol/openid-connect/token/introspect
+      OIDC_CLIENT_ID: social-api
+      OIDC_CLIENT_SECRET: social-api-local-demo-secret
+      OIDC_AUDIENCE: social-api
     depends_on:
-      content-db: {condition: service_healthy}
-      users-service: {condition: service_started}
-    ports: ["127.0.0.1:8002:8000"]
+      content-db:
+        condition: service_healthy
+      users-service:
+        condition: service_started
+      keycloak:
+        condition: service_healthy
+    ports:
+    - 127.0.0.1:8002:8000
+    healthcheck:
+      test:
+      - CMD
+      - python
+      - -c
+      - import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health',timeout=2)
+      interval: 5s
+      timeout: 3s
+      retries: 30
+    labels:
+      miar.logs: 'true'
+      miar.kind: api
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: '3'
   interaction-db:
     image: postgres:16-alpine
     environment:
       POSTGRES_DB: interactions
       POSTGRES_USER: social
       POSTGRES_PASSWORD: social
-    ports: ["127.0.0.1:55433:5432"]
-    volumes: ["interaction-data:/var/lib/postgresql/data"]
+    ports:
+    - 127.0.0.1:55433:5432
+    volumes:
+    - interaction-data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U social -d interactions"]
+      test:
+      - CMD-SHELL
+      - pg_isready -U social -d interactions
       interval: 3s
       timeout: 3s
       retries: 30
-
+    labels:
+      miar.logs: 'true'
+      miar.kind: database
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: '3'
   community-db:
     image: postgres:16-alpine
     environment:
       POSTGRES_DB: communities
       POSTGRES_USER: social
       POSTGRES_PASSWORD: social
-    ports: ["127.0.0.1:55434:5432"]
-    volumes: ["community-data:/var/lib/postgresql/data"]
+    ports:
+    - 127.0.0.1:55434:5432
+    volumes:
+    - community-data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U social -d communities"]
+      test:
+      - CMD-SHELL
+      - pg_isready -U social -d communities
       interval: 3s
       timeout: 3s
       retries: 30
-
+    labels:
+      miar.logs: 'true'
+      miar.kind: database
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: '3'
   moderation-db:
     image: postgres:16-alpine
     environment:
       POSTGRES_DB: moderation
       POSTGRES_USER: social
       POSTGRES_PASSWORD: social
-    ports: ["127.0.0.1:55435:5432"]
-    volumes: ["moderation-data:/var/lib/postgresql/data"]
+    ports:
+    - 127.0.0.1:55435:5432
+    volumes:
+    - moderation-data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U social -d moderation"]
+      test:
+      - CMD-SHELL
+      - pg_isready -U social -d moderation
       interval: 3s
       timeout: 3s
       retries: 30
+    labels:
+      miar.logs: 'true'
+      miar.kind: database
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: '3'
   messenger-db:
     image: mongo:7
-    ports: ["127.0.0.1:57018:27017"]
-    volumes: ["messenger-data:/data/db"]
+    ports:
+    - 127.0.0.1:57018:27017
+    volumes:
+    - messenger-data:/data/db
     healthcheck:
-      test: ["CMD", "mongosh", "--quiet", "--eval", "db.adminCommand('ping')"]
+      test:
+      - CMD
+      - mongosh
+      - --quiet
+      - --eval
+      - db.adminCommand('ping')
       interval: 3s
       timeout: 3s
       retries: 30
+    labels:
+      miar.logs: 'true'
+      miar.kind: database
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: '3'
   interaction-service:
     build:
       context: .
@@ -112,16 +253,39 @@ services:
       INTERACTION_DB_URL: postgresql+psycopg://social:social@interaction-db:5432/interactions
       USERS_URL: http://users-service:8000
       CONTENT_URL: http://content-service:8000
+      OIDC_ISSUER: http://localhost:8080/realms/social-network
+      OIDC_INTROSPECTION_URL: http://keycloak:8080/realms/social-network/protocol/openid-connect/token/introspect
+      OIDC_CLIENT_ID: social-api
+      OIDC_CLIENT_SECRET: social-api-local-demo-secret
+      OIDC_AUDIENCE: social-api
     depends_on:
-      interaction-db: {condition: service_healthy}
-      users-service: {condition: service_started}
-      content-service: {condition: service_started}
-    ports: ["127.0.0.1:8003:8000"]
+      interaction-db:
+        condition: service_healthy
+      users-service:
+        condition: service_started
+      content-service:
+        condition: service_started
+      keycloak:
+        condition: service_healthy
+    ports:
+    - 127.0.0.1:8003:8000
     healthcheck:
-      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/openapi.json', timeout=2)"]
+      test:
+      - CMD
+      - python
+      - -c
+      - import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health',timeout=2)
       interval: 5s
       timeout: 3s
       retries: 30
+    labels:
+      miar.logs: 'true'
+      miar.kind: api
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: '3'
   community-service:
     build:
       context: .
@@ -130,15 +294,37 @@ services:
       COMMUNITY_DB_URL: postgresql+psycopg://social:social@community-db:5432/communities
       USERS_URL: http://users-service:8000
       CONTENT_URL: http://content-service:8000
+      OIDC_ISSUER: http://localhost:8080/realms/social-network
+      OIDC_INTROSPECTION_URL: http://keycloak:8080/realms/social-network/protocol/openid-connect/token/introspect
+      OIDC_CLIENT_ID: social-api
+      OIDC_CLIENT_SECRET: social-api-local-demo-secret
+      OIDC_AUDIENCE: social-api
     depends_on:
-      community-db: {condition: service_healthy}
-      users-service: {condition: service_started}
-    ports: ["127.0.0.1:8004:8000"]
+      community-db:
+        condition: service_healthy
+      users-service:
+        condition: service_started
+      keycloak:
+        condition: service_healthy
+    ports:
+    - 127.0.0.1:8004:8000
     healthcheck:
-      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/openapi.json', timeout=2)"]
+      test:
+      - CMD
+      - python
+      - -c
+      - import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health',timeout=2)
       interval: 5s
       timeout: 3s
       retries: 30
+    labels:
+      miar.logs: 'true'
+      miar.kind: api
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: '3'
   messenger-service:
     build:
       context: .
@@ -147,15 +333,37 @@ services:
       MESSENGER_DB_URL: mongodb://messenger-db:27017/
       USERS_URL: http://users-service:8000
       CONTENT_URL: http://content-service:8000
+      OIDC_ISSUER: http://localhost:8080/realms/social-network
+      OIDC_INTROSPECTION_URL: http://keycloak:8080/realms/social-network/protocol/openid-connect/token/introspect
+      OIDC_CLIENT_ID: social-api
+      OIDC_CLIENT_SECRET: social-api-local-demo-secret
+      OIDC_AUDIENCE: social-api
     depends_on:
-      messenger-db: {condition: service_healthy}
-      users-service: {condition: service_started}
-    ports: ["127.0.0.1:8005:8000"]
+      messenger-db:
+        condition: service_healthy
+      users-service:
+        condition: service_started
+      keycloak:
+        condition: service_healthy
+    ports:
+    - 127.0.0.1:8005:8000
     healthcheck:
-      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/openapi.json', timeout=2)"]
+      test:
+      - CMD
+      - python
+      - -c
+      - import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health',timeout=2)
       interval: 5s
       timeout: 3s
       retries: 30
+    labels:
+      miar.logs: 'true'
+      miar.kind: api
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: '3'
   moderation-service:
     build:
       context: .
@@ -166,25 +374,227 @@ services:
       CONTENT_URL: http://content-service:8000
       INTERACTION_URL: http://interaction-service:8000
       AMQP_URL: amqp://social:social@rabbitmq:5672/%2F
-      MODERATOR_KEY: social-demo-moderator
+      OIDC_ISSUER: http://localhost:8080/realms/social-network
+      OIDC_INTROSPECTION_URL: http://keycloak:8080/realms/social-network/protocol/openid-connect/token/introspect
+      OIDC_CLIENT_ID: social-api
+      OIDC_CLIENT_SECRET: social-api-local-demo-secret
+      OIDC_AUDIENCE: social-api
     depends_on:
-      moderation-db: {condition: service_healthy}
-      users-service: {condition: service_started}
-      content-service: {condition: service_started}
-      rabbitmq: {condition: service_healthy}
-      interaction-service: {condition: service_healthy}
-    ports: ["127.0.0.1:8006:8000"]
+      moderation-db:
+        condition: service_healthy
+      users-service:
+        condition: service_started
+      content-service:
+        condition: service_started
+      rabbitmq:
+        condition: service_healthy
+      interaction-service:
+        condition: service_healthy
+      keycloak:
+        condition: service_healthy
+    ports:
+    - 127.0.0.1:8006:8000
     healthcheck:
-      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/openapi.json', timeout=2)"]
+      test:
+      - CMD
+      - python
+      - -c
+      - import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health',timeout=2)
       interval: 5s
       timeout: 3s
       retries: 30
-
+    labels:
+      miar.logs: 'true'
+      miar.kind: api
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: '3'
+  keycloak:
+    image: quay.io/keycloak/keycloak:26.4.7
+    command:
+    - start-dev
+    - --import-realm
+    environment:
+      KC_BOOTSTRAP_ADMIN_USERNAME: admin
+      KC_BOOTSTRAP_ADMIN_PASSWORD: Admin-demo-2026!
+      KC_HOSTNAME: http://localhost:8080
+      KC_HEALTH_ENABLED: 'true'
+    ports:
+    - 127.0.0.1:8080:8080
+    volumes:
+    - ./security/realm.json:/opt/keycloak/data/import/realm.json:ro
+    - keycloak-data:/opt/keycloak/data
+    healthcheck:
+      test:
+      - CMD
+      - bash
+      - -ec
+      - exec 3<>/dev/tcp/localhost/9000; printf "GET /health/ready HTTP/1.0\r\n\r\n"
+        >&3; grep -q "UP" <&3
+      interval: 5s
+      timeout: 3s
+      retries: 40
+    labels:
+      miar.logs: 'true'
+      miar.kind: identity
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: '3'
+  prometheus:
+    image: prom/prometheus:v3.5.0
+    ports:
+    - 127.0.0.1:9090:9090
+    volumes:
+    - ./observability/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+    - prometheus-data:/prometheus
+    - ./observability/alerts.yml:/etc/prometheus/alerts.yml:ro
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: '3'
+  grafana:
+    image: grafana/grafana:12.2.1
+    ports:
+    - 127.0.0.1:3000:3000
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: Grafana-demo-2026!
+      GF_USERS_ALLOW_SIGN_UP: 'false'
+      GF_AUTH_ANONYMOUS_ENABLED: 'true'
+      GF_AUTH_ANONYMOUS_ORG_ROLE: Viewer
+    volumes:
+    - ./observability/grafana/provisioning:/etc/grafana/provisioning:ro
+    - ./observability/grafana/dashboards:/var/lib/grafana/dashboards:ro
+    - grafana-data:/var/lib/grafana
+    depends_on:
+    - prometheus
+    - loki
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: '3'
+  loki:
+    image: grafana/loki:3.5.5
+    command:
+    - -config.file=/etc/loki/config.yml
+    ports:
+    - 127.0.0.1:3100:3100
+    volumes:
+    - ./observability/loki.yml:/etc/loki/config.yml:ro
+    - loki-data:/loki
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: '3'
+  alloy:
+    image: grafana/alloy:v1.11.3
+    command:
+    - run
+    - --server.http.listen-addr=0.0.0.0:12345
+    - --storage.path=/var/lib/alloy/data
+    - /etc/alloy/config.alloy
+    volumes:
+    - ./observability/config.alloy:/etc/alloy/config.alloy:ro
+    - /var/run/docker.sock:/var/run/docker.sock:ro
+    - alloy-data:/var/lib/alloy/data
+    depends_on:
+    - loki
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: '3'
+  users-exporter:
+    image: prometheuscommunity/postgres-exporter:v0.17.1
+    environment:
+      DATA_SOURCE_NAME: postgresql://social:social@users-db:5432/users?sslmode=disable
+    depends_on:
+      users-db:
+        condition: service_healthy
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: '3'
+  interaction-exporter:
+    image: prometheuscommunity/postgres-exporter:v0.17.1
+    environment:
+      DATA_SOURCE_NAME: postgresql://social:social@interaction-db:5432/interactions?sslmode=disable
+    depends_on:
+      interaction-db:
+        condition: service_healthy
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: '3'
+  community-exporter:
+    image: prometheuscommunity/postgres-exporter:v0.17.1
+    environment:
+      DATA_SOURCE_NAME: postgresql://social:social@community-db:5432/communities?sslmode=disable
+    depends_on:
+      community-db:
+        condition: service_healthy
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: '3'
+  moderation-exporter:
+    image: prometheuscommunity/postgres-exporter:v0.17.1
+    environment:
+      DATA_SOURCE_NAME: postgresql://social:social@moderation-db:5432/moderation?sslmode=disable
+    depends_on:
+      moderation-db:
+        condition: service_healthy
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: '3'
+  content-exporter:
+    image: percona/mongodb_exporter:0.47.2
+    command:
+    - --mongodb.uri=mongodb://content-db:27017
+    - --collect-all
+    depends_on:
+      content-db:
+        condition: service_healthy
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: '3'
+  messenger-exporter:
+    image: percona/mongodb_exporter:0.47.2
+    command:
+    - --mongodb.uri=mongodb://messenger-db:27017
+    - --collect-all
+    depends_on:
+      messenger-db:
+        condition: service_healthy
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: '3'
 volumes:
-  users-data:
-  content-data:
-  rabbit-data:
-  interaction-data:
-  community-data:
-  messenger-data:
-  moderation-data:
+  users-data: null
+  content-data: null
+  rabbit-data: null
+  interaction-data: null
+  community-data: null
+  messenger-data: null
+  moderation-data: null
+  keycloak-data: {}
+  prometheus-data: {}
+  grafana-data: {}
+  loki-data: {}
+  alloy-data: {}

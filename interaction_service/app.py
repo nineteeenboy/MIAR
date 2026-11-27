@@ -75,3 +75,7 @@ def internal_comment(comment_id: UUID):
     if row is None:
         raise HTTPException(404, 'Comment not found')
     return dict(row)
+
+
+from common.observability import setup
+setup(app, "interaction")

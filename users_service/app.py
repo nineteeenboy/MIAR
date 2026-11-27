@@ -17,7 +17,7 @@ async def lifespan(app):
     yield
     engine.dispose()
 
-app = FastAPI(title='Social Network Profiles API', version='1.0.0', lifespan=lifespan)
+app = FastAPI(title='Social Network Profiles API', version='2.0.0', lifespan=lifespan, docs_url=None, redoc_url=None)
 
 class ProfileInput(BaseModel):
     email: str = Field(min_length=5, max_length=254)
@@ -43,7 +43,9 @@ class ProfileUpdate(BaseModel):
 
 @app.post('/api/v1/users', status_code=201)
 def create_profile(data: ProfileInput):
-    profile = dict(id=uuid4(), email=data.email, display_name=data.display_name,
+    from common.security import identity
+    person=identity.get()
+    profile = dict(id=UUID(person.subject) if person else uuid4(), email=data.email, display_name=data.display_name,
                    blocked=False, created_at=datetime.now(timezone.utc))
     try:
         with engine.begin() as db:
@@ -78,3 +80,7 @@ def delete_profile(user_id: UUID):
     if not result.rowcount:
         raise HTTPException(404, 'User not found')
     return Response(status_code=204)
+
+
+from common.observability import setup
+setup(app, "users")

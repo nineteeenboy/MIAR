@@ -1,0 +1,10 @@
+groups:
+- name: social
+  rules:
+  - alert: SocialTargetDown
+    expr: up == 0
+    for: 15s
+    labels:
+      severity: warning
+    annotations:
+      summary: Target {{ $labels.instance }} is unavailable

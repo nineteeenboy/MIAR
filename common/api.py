@@ -9,7 +9,8 @@ CONTENT_URL = os.getenv('CONTENT_URL', 'http://127.0.0.1:8002')
 
 def fetch(url):
     try:
-        response = httpx.get(url, timeout=3.0, trust_env=False)
+        from common.observability import request_id
+        response = httpx.get(url, timeout=3.0, trust_env=False, headers={'X-Request-ID':request_id.get()})
     except httpx.RequestError:
         raise HTTPException(503, 'Dependency unavailable')
     if response.status_code == 404:

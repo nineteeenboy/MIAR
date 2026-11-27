@@ -18,7 +18,7 @@ async def lifespan(app):
     yield
     mongo.close()
 
-app = FastAPI(title='Social Network Content API', version='1.0.0', lifespan=lifespan)
+app = FastAPI(title='Social Network Content API', version='2.0.0', lifespan=lifespan, docs_url=None, redoc_url=None)
 
 class PostInput(BaseModel):
     author_id: UUID
@@ -34,7 +34,9 @@ class PostInput(BaseModel):
 def check_author(author_id: UUID):
     """Вложенный HTTP-вызов. Сбой зависимости не разрешает публикацию."""
     try:
-        response = httpx.get(f'{USERS_URL}/api/v1/users/{author_id}', timeout=3.0)
+        from common.observability import request_id
+        response = httpx.get(f'{USERS_URL}/api/v1/users/{author_id}', timeout=3.0,
+                             headers={'X-Request-ID':request_id.get()}, trust_env=False)
     except httpx.RequestError:
         raise HTTPException(503, 'Users service unavailable')
     if response.status_code == 404:
@@ -49,6 +51,10 @@ def public(document):
 
 @app.post('/api/v1/posts', status_code=201)
 def create_post(data: PostInput):
+    from common.security import identity
+    person=identity.get()
+    if person and str(data.author_id)!=person.subject:
+        raise HTTPException(403, 'Author must match token subject')
     check_author(data.author_id)
     document = {'_id': str(uuid4()), 'author_id': str(data.author_id),
                 'text': data.text, 'created_at': datetime.now(timezone.utc).isoformat()}
@@ -70,6 +76,17 @@ def list_posts(author_id: UUID | None = None, limit: int = Query(20, ge=1, le=10
 
 @app.delete('/api/v1/posts/{post_id}', status_code=204)
 def delete_post(post_id: UUID):
+    from common.security import identity
+    person=identity.get()
+    if person:
+        document=posts.find_one({'_id':str(post_id)})
+        if document is None:raise HTTPException(404,'Post not found')
+        if document['author_id']!=person.subject and 'moderator' not in person.roles:
+            raise HTTPException(403,'Post belongs to another user')
     if posts.delete_one({'_id': str(post_id)}).deleted_count == 0:
         raise HTTPException(404, 'Post not found')
     return Response(status_code=204)
+
+
+from common.observability import setup
+setup(app, "content")
